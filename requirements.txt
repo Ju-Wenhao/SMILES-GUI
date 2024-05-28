@@ -8,3 +8,4 @@ rdkit==2023.9.5
 streamlit==1.33.0
 torch==2.2.2
 tqdm==4.65.0
+streamlit-aggrid
