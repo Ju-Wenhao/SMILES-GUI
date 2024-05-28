@@ -1,12 +1,10 @@
-
 import os
-from io import BytesIO
+from io import BytesIO, StringIO
 from PIL import Image
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
-
 
 # 定义模型文件的根目录
 ROOT_DIR = Path(__file__).parent.parent / 'experiments' / 'uspto_50k'
@@ -32,72 +30,6 @@ def select_model_and_logs():
     
     return selected_model_file, selected_logs_file
 
-def plot_graphs(df):
-    # 创建 2x2 子图
-    fig, axs = plt.subplots(2, 2, figsize=(15, 10))
-    fig.tight_layout(pad=5.0)
-
-    # 绘制训练准确率
-    axs[0, 0].plot(df['epoch'], df['train_acc'], label='train_acc', color='blue')
-    axs[0, 0].set_title('Train Accuracy vs Epoch')
-    axs[0, 0].set_xlabel('Epoch')
-    axs[0, 0].set_ylabel('Accuracy')
-    axs[0, 0].grid(True)
-    axs[0, 0].legend()
-
-    # 绘制训练损失
-    axs[0, 1].plot(df['epoch'], df['train_loss'], label='train_loss', color='red')
-    axs[0, 1].set_title('Train Loss vs Epoch')
-    axs[0, 1].set_xlabel('Epoch')
-    axs[0, 1].set_ylabel('Loss')
-    axs[0, 1].grid(True)
-    axs[0, 1].legend()
-
-    # 绘制验证准确率
-    axs[1, 0].plot(df['epoch'], df['valid_acc'], label='valid_acc', color='green')
-    axs[1, 0].set_title('Validation Accuracy vs Epoch')
-    axs[1, 0].set_xlabel('Epoch')
-    axs[1, 0].set_ylabel('Accuracy')
-    axs[1, 0].grid(True)
-    axs[1, 0].legend()
-    # 标注最佳验证准确率
-    best_valid_acc = df['valid_acc'].max()
-    best_epoch = df['epoch'][df['valid_acc'].idxmax()]
-    axs[1, 0].scatter(best_epoch, best_valid_acc, color='black')
-    axs[1, 0].annotate(f'Epoch {best_epoch}: {best_valid_acc:.4f}',
-                       (best_epoch, best_valid_acc),
-                       textcoords="offset points",
-                       xytext=(0,-30),
-                       ha='center',
-                       fontsize=14)
-
-    # 绘制验证第一步准确率
-    axs[1, 1].plot(df['epoch'], df['valid_first_step_acc'], label='valid_first_step_acc', color='purple')
-    axs[1, 1].set_title('Validation First Step Accuracy vs Epoch')
-    axs[1, 1].set_xlabel('Epoch')
-    axs[1, 1].set_ylabel('Accuracy')
-    axs[1, 1].grid(True)
-    axs[1, 1].legend()
-    # 标注最佳验证第一步准确率
-    best_valid_first_step_acc = df['valid_first_step_acc'].max()
-    best_epoch = df['epoch'][df['valid_first_step_acc'].idxmax()]
-    axs[1, 1].scatter(best_epoch, best_valid_first_step_acc, color='black')
-    axs[1, 1].annotate(f'Epoch {best_epoch}: {best_valid_first_step_acc:.4f}',
-                       (best_epoch, best_valid_first_step_acc),
-                       textcoords="offset points",
-                       xytext=(0,-30),
-                       ha='center',
-                       fontsize=14)
-    
-    # 将图表保存为内存中的PNG图片
-    png_buffer = BytesIO()
-    fig.savefig(png_buffer, format='png')
-    png_buffer.seek(0)
-
-    # 使用PIL读取内存中的PNG图片，并返回
-    image = Image.open(png_buffer)
-    return image
-
 def main():
 
     # 添加学校logo图
@@ -114,22 +46,53 @@ def main():
     <img class="logo" src="data:image/png;base64,{}" alt="校徽">
     """.format(st.session_state.img_base64), unsafe_allow_html=True)
 
-    st.title("请选择模型文件:")
+    st.title("请选择模型文件")
     selected_model_file, selected_logs_file = select_model_and_logs()
+
     if selected_model_file and selected_logs_file:
-        st.write(f"请确认你选择模型文件的完整路径: {selected_model_file}")
-        # 将选择的文件路径存储到session_state（如果需要的话）
         st.session_state.selected_model_file = selected_model_file
+        st.write(f"请确认你选择模型文件的完整路径: {selected_model_file}")
 
-    # 读取文件，跳过前20行，并将第20行作为列名
-    df = pd.read_csv(selected_logs_file, skiprows=20, header=19)
+        st.subheader("模型训练效果展示")
 
-    # 设置正确的列名
-    column_names = ['epoch', 'train_acc', 'valid_acc', 'valid_first_step_acc', 'train_loss']
-    df.columns = column_names
+        # 读取文件，跳过前19行，第20行作为列名
+        train_df = pd.read_csv(selected_logs_file, skiprows=19)
 
-    st.image(plot_graphs(df))
+        # 设置正确的列名
+        column_names = ['epoch', 'train_acc', 'valid_acc', 'valid_first_step_acc', 'train_loss']
+        train_df.columns = column_names
 
+        # 将第一列设置为行名
+        train_df.index = train_df.iloc[:,0]
+        train_df.drop(train_df.columns[0], axis=1, inplace=True)
+
+        # 打印数据以进行检查
+        st.write(train_df)
+
+        # 获取除了'epoch'列之外的所有列名，作为可选择的字段
+        available_columns = train_df.columns.tolist()
+
+        # 创建一个选择框，让用户选择需要显示的字段
+        selected_columns = st.multiselect('请选择需要显示的可视化图', available_columns)
+
+        # 绘制折线图
+        chart_data = train_df[selected_columns]
+        st.line_chart(chart_data,)
+
+
+        # 读取文件的前19行，作为模型超参数的配置表
+        config_df = pd.read_csv(selected_logs_file, nrows=18, header=None)
+
+        # 将第一行设置为列名
+        config_df.columns = config_df.iloc[0]
+        config_df = config_df.drop(0).reset_index(drop=True)
+
+        # 将第一列设置为行名
+        config_df.index = config_df.iloc[:, 0]
+        config_df = config_df.drop(config_df.columns[0], axis=1)
+        # 显示模型超参数配置表
+        st.subheader("模型超参数配置表")
+        st.write(config_df)
 
     # 页脚文本
     footer_text = """
@@ -139,6 +102,6 @@ def main():
     """
     # 渲染自定义页脚文本
     st.markdown(footer_text, unsafe_allow_html=True)
-    
+
 if __name__ == '__main__':
     main()

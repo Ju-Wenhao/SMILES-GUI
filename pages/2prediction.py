@@ -88,7 +88,7 @@ def main():
     <img class="logo" src="data:image/png;base64,{}" alt="校徽">
     """.format(st.session_state.img_base64), unsafe_allow_html=True)
 
-    st.title('预测反应结果:')
+    st.title('预测反应结果')
 
     # 初始化session_state，如果之前没有设置过，则设置默认值
     if 'smiles_input' not in st.session_state:
@@ -107,6 +107,11 @@ def main():
     # 更新session_state中的值，以便在后续使用中保持一致性
     st.session_state.smiles_input = smiles_input
 
+    try:
+        selected_model_file = st.session_state.selected_model_file
+    except:
+        st.error('请先选择模型文件！')
+
     # 根据按钮状态设置SMILES输入
     if use_example:
         # 当用户点击示例按钮时，更新session_state中的SMILES输入
@@ -116,29 +121,28 @@ def main():
 
     if smiles_input:
 
-        selected_model_file = st.session_state.selected_model_file
-        
+        st.subheader("模型预测结果表")
+
         try:
+            
             # 调用 predict_reactions 函数
             results = predict_reactions(selected_model_file,smiles_input)
             st.session_state.results = results
 
             # 将结果转换为DataFrame
             df = pd.DataFrame(results)
-            st.session_state.df = df
-
+            
             # 在DataFrame中添加从1开始的编号作为新的一列
             df.insert(0, '编号', range(1, len(df) + 1))
+            
+            # 将第一列设置为行名
+            df.index = df.iloc[:,0]
+            df.drop(df.columns[0], axis=1, inplace=True)
+            st.write(df)
 
-            # 使用GridOptionsBuilder配置表格
-            options_builder = GridOptionsBuilder.from_dataframe(df)
-            options_builder.configure_default_column(groupable=True, value=True, enableRowGroup=False,
-                                                    aggFunc='sum', editable=False, wrapText=True, autoHeight=True)
-            grid_options = options_builder.build()
-
-            # 将添加了编号的DataFrame传递给AgGrid
-            grid_return = AgGrid(df, grid_options, theme=AgGridTheme.STREAMLIT)
-
+            df.insert(0, '编号', range(1, len(df) + 1))
+            st.session_state.df = df
+            
         except:
             st.error('输入的SMILES式不合法！')
 

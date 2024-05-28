@@ -148,7 +148,7 @@ def main():
     <img class="logo" src="data:image/png;base64,{}" alt="校徽">
     """.format(st.session_state.img_base64), unsafe_allow_html=True)
 
-    st.title('预测反应可视化:')
+    st.title('预测反应可视化')
 
     # 允许用户选择2D或3D显示
     dimension = st.selectbox("选择分子可视化的维度:", options=["2D", "3D"])
@@ -165,11 +165,12 @@ def main():
         selected_prediction_field_1 = selected_result['反应物1']
         selected_prediction_field_2 = selected_result['反应物2']
 
+        st.subheader("模型预测结果分子图")
         st.image(merge_images_complex(selected_prediction_field_1, selected_prediction_field_2,smiles_input,dimension)) 
 
 
     else:
-        st.write('你未输入内容!')
+        st.error('请先完成模型预测！')
 
     # 页脚文本
     footer_text = """
