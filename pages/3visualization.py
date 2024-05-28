@@ -16,71 +16,67 @@ def draw_reaction(reactants, dimension, image_width, image_height):
  
     return Draw.MolToImage(mol, size=(image_width, image_height))
 
-def add_title_to_image(image, title_text):
+from PIL import ImageFont
 
-    # 获取图像的宽度和高度
-    img_width, img_height = image.size
-    
-    # 设置字体大小和类型，确保你的环境中存在该字体文件
-    font_size = 60
-    font_path = "arial.ttf"  # 确保这个路径指向一个有效的字体文件
-    
+def get_default_font(size, backup_font_path="arial.ttf"):
+    """Try to get the default font, falling back to a specified one."""
     try:
-        font = ImageFont.truetype(font_path, font_size)
-        # 确保使用正确的属性来获取文本尺寸
-        title_width, title_height = font.getbbox(title_text)[2:]  # 使用getbbox方法获取宽度和高度
+        # Attempt to use the system default font
+        font = ImageFont.truetype(None, size)
     except IOError:
-        print(f"无法加载字体文件: {font_path}")
-        return image  # 如果字体加载失败，则直接返回原图
+        try:
+            # If the above fails, try loading Arial (or any other backup font)
+            font = ImageFont.truetype(backup_font_path, size)
+        except IOError:
+            print("Unable to load any font, including the backup.")
+            font = None  # Explicitly set to None if all attempts fail
+
+    return font
+
+def add_title_to_image(image, title_text, font_size=60):
+
+    img_width, img_height = image.size
+    font = get_default_font(font_size)  # 使用默认字体
     
-    title_x = (img_width - title_width) // 2
-    title_y = 10  # 标题距离图像顶部的距离，可以根据需要调整
-    
-    # 创建一个新的画布，用于绘制标题
-    title_image = Image.new('RGBA', (img_width, img_height), (255, 255, 255, 0))  # 透明背景
-    draw = ImageDraw.Draw(title_image)
-    
-    # 绘制标题
-    draw.text((title_x, title_y), title_text, fill=(0, 0, 0), font=font)
-    
-    # 将带有标题的新图层与原始图像合并
-    final_image = Image.alpha_composite(image.convert("RGBA"), title_image)
+    if font is not None:
+        # 获取文本尺寸
+        title_width, title_height = font.getbbox(title_text)[2:]
+        title_x = (img_width - title_width) // 2
+        title_y = 10
+        
+        # 绘制标题
+        title_image = Image.new('RGBA', (img_width, img_height), (255, 255, 255, 0))
+        draw = ImageDraw.Draw(title_image)
+        draw.text((title_x, title_y), title_text, fill=(0, 0, 0), font=font)
+        
+        final_image = Image.alpha_composite(image.convert("RGBA"), title_image)
+    else:
+        final_image = image  # 如果找不到字体，就返回原图
     
     return final_image
 
-def add_sign_to_image(image, title_text):
+def add_sign_to_image(image, title_text, font_size=100):
 
-    # 获取图像的宽度和高度
     img_width, img_height = image.size
+    font = get_default_font(font_size)
     
-    # 设置字体大小和类型，确保你的环境中存在该字体文件
-    font_size = 100
-    font_path = "arial.ttf"  # 确保这个路径指向一个有效的字体文件
-    
-    try:
-        font = ImageFont.truetype(font_path, font_size)
-        # 确保使用正确的属性来获取文本尺寸
-        sign_width, sign_height = font.getbbox(title_text)[2:]  # 使用getbbox方法获取宽度和高度
-    except IOError:
-        print(f"无法加载字体文件: {font_path}")
-        return image  # 如果字体加载失败，则直接返回原图
-    
-    if title_text == "+":
-        title_x = (img_width - sign_width) // 2
-        title_y = 0
+    if font is not None:
+        sign_width, sign_height = font.getbbox(title_text)[2:]
+        
+        if title_text == "+":
+            title_x = (img_width - sign_width) // 2
+            title_y = 0
+        else:
+            title_x = 400  # 这里可能需要根据实际情况调整
+            title_y = 900
+        
+        title_image = Image.new('RGBA', (img_width, img_height), (255, 255, 255, 0))
+        draw = ImageDraw.Draw(title_image)
+        draw.text((title_x, title_y), title_text, fill=(0, 0, 0), font=font)
+        
+        final_image = Image.alpha_composite(image.convert("RGBA"), title_image)
     else:
-        title_x = 400
-        title_y = 900
-    
-    # 创建一个新的画布，用于绘制标题
-    title_image = Image.new('RGBA', (img_width, img_height), (255, 255, 255, 0))  # 透明背景
-    draw = ImageDraw.Draw(title_image)
-    
-    # 绘制标题
-    draw.text((title_x, title_y), title_text, fill=(0, 0, 0), font=font)
-    
-    # 将带有标题的新图层与原始图像合并
-    final_image = Image.alpha_composite(image.convert("RGBA"), title_image)
+        final_image = image
     
     return final_image
 
@@ -133,6 +129,8 @@ def merge_images_complex(selected_prediction_field_1, selected_prediction_field_
     return final_image
 
 def main():
+    with open('./logo.jpg', 'rb') as file:
+        img_base64 = base64.b64encode(file.read()).decode()
 
     # 添加学校logo图
     st.markdown("""
@@ -146,7 +144,7 @@ def main():
     }}
     </style>
     <img class="logo" src="data:image/png;base64,{}" alt="校徽">
-    """.format(st.session_state.img_base64), unsafe_allow_html=True)
+    """.format(img_base64), unsafe_allow_html=True)
 
     st.title('预测反应可视化')
 

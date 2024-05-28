@@ -1,3 +1,4 @@
+import base64
 import os
 from io import BytesIO, StringIO
 from PIL import Image
@@ -31,6 +32,8 @@ def select_model_and_logs():
     return selected_model_file, selected_logs_file
 
 def main():
+    with open('./logo.jpg', 'rb') as file:
+        img_base64 = base64.b64encode(file.read()).decode()
 
     # 添加学校logo图
     st.markdown("""
@@ -44,7 +47,7 @@ def main():
     }}
     </style>
     <img class="logo" src="data:image/png;base64,{}" alt="校徽">
-    """.format(st.session_state.img_base64), unsafe_allow_html=True)
+    """.format(img_base64), unsafe_allow_html=True)
 
     st.title("请选择模型文件")
     selected_model_file, selected_logs_file = select_model_and_logs()
