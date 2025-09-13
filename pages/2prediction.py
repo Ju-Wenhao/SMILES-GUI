@@ -6,7 +6,6 @@ import streamlit as st
 from pathlib import Path
 from rdkit import RDLogger
 from models import Graph2Edits, BeamSearch
-from st_aggrid import AgGrid, GridOptionsBuilder, AgGridTheme
 
 
 lg = RDLogger.logger()
@@ -14,13 +13,12 @@ lg.setLevel(4)
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-# 定义模型文件的根目录
+# Root experiments directory
 ROOT_DIR = Path(__file__).parent.parent / 'experiments' / 'uspto_50k'
 
-# 创建一个示例SMILES字符串
 example_smiles = "[O:1]=[S:19]([c:18]1[cH:17][c:15]([Cl:16])[c:14]2[o:13][c:12]3[c:28]([c:27]2[cH:26]1)[CH2:29][N:9]([C:7]([O:6][C:3]([CH3:2])([CH3:4])[CH3:5])=[O:8])[CH2:10][CH2:11]3)[c:20]1[cH:21][cH:22][cH:23][cH:24][cH:25]1"
 
-def predict_reactions(selected_file,molecule_string, use_rxn_class=False, beam_size=10, max_steps=9):
+def predict_reactions(selected_file, molecule_string, use_rxn_class=False, beam_size=10, max_steps=9):
     
     checkpoint_path = os.path.join(ROOT_DIR, selected_file)
 
@@ -52,10 +50,9 @@ def predict_reactions(selected_file,molecule_string, use_rxn_class=False, beam_s
         new_pred_smi_field_2 = pred_smi_parts[1] if len(pred_smi_parts) > 1 else None
         # reaction_smiles = str(pred_smi) + '>>' + str(molecule_string)
         return {
-            '反应物1': new_pred_smi_field_1,
-            '反应物2': new_pred_smi_field_2,
-            '可靠性': f'{float(prob * 100):.2f}%',
-            #'编辑步骤': str_edits
+            'Reactant 1': new_pred_smi_field_1,
+            'Reactant 2': new_pred_smi_field_2,
+            'Confidence': f'{float(prob * 100):.2f}%',
         }
     
     # Filter out predictions with 'prediction': 'final_smi_unmapped'
@@ -65,88 +62,106 @@ def predict_reactions(selected_file,molecule_string, use_rxn_class=False, beam_s
     unique_predictions = []
     seen_predictions = set()
     for prediction in filtered_predictions:
-        if prediction['反应物1'] not in seen_predictions:
+        if prediction['Reactant 1'] not in seen_predictions:
             unique_predictions.append(prediction)
-            seen_predictions.add(prediction['反应物1'])
+            seen_predictions.add(prediction['Reactant 1'])
     print(unique_predictions)
 
     return unique_predictions
 
 def main():
-    with open('./logo.jpg', 'rb') as file:
+    with open('./assets/logo.jpg', 'rb') as file:
         img_base64 = base64.b64encode(file.read()).decode()
 
-    # 添加学校logo图
-    st.markdown("""
-    <style>
-    .logo {{
-        position: absolute;
-        top: 0px;  /* 调整距离顶部的位置 */
-        left: 600px; /* 调整距离左侧的位置 */
-        width: 100px; /* 调整校徽的宽度 */
-        height: 100px; /* 调整校徽的高度 */
-    }}
-    </style>
-    <img class="logo" src="data:image/png;base64,{}" alt="校徽">
-    """.format(img_base64), unsafe_allow_html=True)
+    # Logo
+    st.markdown(
+        f"""
+        <style>
+        .logo {{ position: absolute; top:0; left:600px; width:90px; height:90px; }}
+        </style>
+        <img class="logo" src="data:image/png;base64,{img_base64}" alt="Logo" />
+        """,
+        unsafe_allow_html=True,
+    )
+    st.title('Prediction')
 
-    st.title('预测反应结果')
-
-    # 初始化session_state，如果之前没有设置过，则设置默认值
+    # 初始化 key（避免首次访问不存在）
     if 'smiles_input' not in st.session_state:
         st.session_state.smiles_input = ''
 
-    # 使用session_state中的值作为文本输入的默认值
-    smiles_input = st.text_area(label = '请输入药物分子的SMILES式', 
-                        value=st.session_state.smiles_input, 
-                        height=5, 
-                        max_chars=500, 
-                        help='最大长度限制为500')
-
-    # 创建一个按钮，允许用户选择使用示例SMILES
-    use_example = st.button('使用示例SMILES进行测试')
-
-    # 更新session_state中的值，以便在后续使用中保持一致性
-    st.session_state.smiles_input = smiles_input
-
-    try:
-        selected_model_file = st.session_state.selected_model_file
-    except:
-        st.error('请先选择模型文件！')
-
-    # 根据按钮状态设置SMILES输入
-    if use_example:
-        # 当用户点击示例按钮时，更新session_state中的SMILES输入
+    # 示例按钮使用回调，避免与已实例化同 key 的 text_area 冲突
+    def _load_example():
         st.session_state.smiles_input = example_smiles
-        # 重新赋值给smiles_input，以便在当前运行中使用
-        smiles_input = example_smiles
 
-    if smiles_input:
+    def _clear_input():
+        st.session_state.smiles_input = ''
 
-        st.subheader("模型预测结果表")
+    st.markdown(
+        """
+        <style>
+        .smi-box-wrapper { position: relative; }
+        .smi-controls { display: flex; gap: .5rem; align-items: center; justify-content: flex-end; margin-top: -0.2rem; }
+        .smi-length { margin-right: auto; font-size: 0.78rem; color: #666; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
-        try:
-            
-            # 调用 predict_reactions 函数
-            results = predict_reactions(selected_model_file,smiles_input)
-            st.session_state.results = results
+    st.text_area(
+        'Enter product SMILES',
+        height=5,
+        max_chars=500,
+        help='Max length 500 characters',
+        key='smiles_input'
+    )
+    col_len, col_spacer, col_btn1, col_btn2, col_btn3 = st.columns([2,0.3,1,1,1])
+    with col_len:
+        st.caption(f"Current SMILES length: {len(st.session_state.smiles_input)}")
+    with col_btn1:
+        st.button('Use example', on_click=_load_example, help='Load example')
+    with col_btn2:
+        st.button('Clear', on_click=_clear_input, help='Clear input')
+    with col_btn3:
+        predict_clicked = st.button('Predict', type='primary', help='Run retrosynthesis prediction')
+    if 'predict_clicked' not in st.session_state:
+        st.session_state.predict_clicked = False
+    if 'predict_clicked_flag' in locals() and predict_clicked:
+        st.session_state.predict_clicked = True
+    elif predict_clicked:
+        st.session_state.predict_clicked = True
 
-            # 将结果转换为DataFrame
-            df = pd.DataFrame(results)
-            
-            # 在DataFrame中添加从1开始的编号作为新的一列
-            df.insert(0, '编号', range(1, len(df) + 1))
-            
-            # 将第一列设置为行名
-            df.index = df.iloc[:,0]
-            df.drop(df.columns[0], axis=1, inplace=True)
-            st.write(df)
+    model_path = st.session_state.get('selected_model_file')
+    if not model_path:
+        st.info('Select a model on the Selection page to enable prediction.')
 
-            df.insert(0, '编号', range(1, len(df) + 1))
-            st.session_state.df = df
-            
-        except:
-            st.error('输入的SMILES式不合法！')
+    # (example button handled above with rerun)
+
+    current_smi = st.session_state.get('smiles_input','').strip()
+    if 'predict_clicked' in st.session_state and st.session_state.predict_clicked:
+        if not current_smi:
+            st.warning('Input SMILES is empty.')
+        elif not model_path:
+            st.warning('No model selected.')
+        else:
+            st.subheader("Predicted Precursors")
+            try:
+                results = predict_reactions(model_path, current_smi)
+                st.session_state.results = results
+                df = pd.DataFrame(results)
+                df.insert(0, 'ID', range(1, len(df) + 1))
+                df = df.set_index('ID')
+                st.write(df)
+                df.insert(0, 'ID', range(1, len(df) + 1))
+                st.session_state.df = df
+            except Exception:
+                st.error('Invalid SMILES string.')
+    elif st.session_state.get('results'):
+        st.subheader("Last Prediction")
+        df_prev = pd.DataFrame(st.session_state.results)
+        if 'ID' not in df_prev.columns:
+            df_prev.insert(0, 'ID', range(1, len(df_prev) + 1))
+        df_prev = df_prev.set_index('ID')
+        st.write(df_prev)
 
     # 页脚文本
     footer_text = """

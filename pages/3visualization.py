@@ -8,11 +8,9 @@ def draw_reaction(reactants, dimension, image_width, image_height):
 
     mol = Chem.MolFromSmiles(reactants)
     if dimension == '3D':
-        # 加氢
-        mol = AllChem.AddHs(mol)
-        AllChem.EmbedMolecule(mol)
-        # 优化
-        AllChem.MMFFOptimizeMolecule(mol)
+        mol = AllChem.AddHs(mol)  # type: ignore[attr-defined]
+        AllChem.EmbedMolecule(mol)  # type: ignore[attr-defined]
+        AllChem.MMFFOptimizeMolecule(mol)  # type: ignore[attr-defined]
  
     return Draw.MolToImage(mol, size=(image_width, image_height))
 
@@ -21,52 +19,43 @@ from PIL import ImageFont
 
 def add_title_to_image(image, title_text, font_size=60):
 
-    # 获取图像的宽度和高度
     img_width, img_height = image.size
 
-    # 设置字体大小和类型，确保你的环境中存在该字体文件
     font_size = 60
-    font_path = "arial.ttf"  # 确保这个路径指向一个有效的字体文件
+    font_path = "./assets/arial.ttf"
 
     try:
         font = ImageFont.truetype(font_path, font_size)
-        # 确保使用正确的属性来获取文本尺寸
-        title_width, title_height = font.getbbox(title_text)[2:]  # 使用getbbox方法获取宽度和高度
+        title_width, title_height = font.getbbox(title_text)[2:]
     except IOError:
-        print(f"无法加载字体文件: {font_path}")
-        return image  # 如果字体加载失败，则直接返回原图
+        print(f"Cannot load font file: {font_path}")
+        return image
 
     title_x = (img_width - title_width) // 2
-    title_y = 10  # 标题距离图像顶部的距离，可以根据需要调整
+    title_y = 10
 
-    # 创建一个新的画布，用于绘制标题
-    title_image = Image.new('RGBA', (img_width, img_height), (255, 255, 255, 0))  # 透明背景
+    title_image = Image.new('RGBA', (img_width, img_height), (255, 255, 255, 0))
     draw = ImageDraw.Draw(title_image)
 
-    # 绘制标题
     draw.text((title_x, title_y), title_text, fill=(0, 0, 0), font=font)
 
-    # 将带有标题的新图层与原始图像合并
     final_image = Image.alpha_composite(image.convert("RGBA"), title_image)
 
     return final_image
 
 def add_sign_to_image(image, title_text, font_size=100):
 
-    # 获取图像的宽度和高度
     img_width, img_height = image.size
 
-    # 设置字体大小和类型，确保你的环境中存在该字体文件
     font_size = 100
-    font_path = "arial.ttf"  # 确保这个路径指向一个有效的字体文件
+    font_path = "./assets/arial.ttf"
 
     try:
         font = ImageFont.truetype(font_path, font_size)
-        # 确保使用正确的属性来获取文本尺寸
-        sign_width, sign_height = font.getbbox(title_text)[2:]  # 使用getbbox方法获取宽度和高度
+        sign_width, sign_height = font.getbbox(title_text)[2:]
     except IOError:
-        print(f"无法加载字体文件: {font_path}")
-        return image  # 如果字体加载失败，则直接返回原图
+        print(f"Cannot load font file: {font_path}")
+        return image
 
     if title_text == "+":
         title_x = (img_width - sign_width) // 2
@@ -75,106 +64,90 @@ def add_sign_to_image(image, title_text, font_size=100):
         title_x = 400
         title_y = 900
 
-    # 创建一个新的画布，用于绘制标题
-    title_image = Image.new('RGBA', (img_width, img_height), (255, 255, 255, 0))  # 透明背景
+    title_image = Image.new('RGBA', (img_width, img_height), (255, 255, 255, 0))
     draw = ImageDraw.Draw(title_image)
 
-    # 绘制标题
     draw.text((title_x, title_y), title_text, fill=(0, 0, 0), font=font)
 
-    # 将带有标题的新图层与原始图像合并
     final_image = Image.alpha_composite(image.convert("RGBA"), title_image)
 
     return final_image
 
 def merge_images_complex(selected_prediction_field_1, selected_prediction_field_2, smiles_input, dimension):
-
+    """Compose a combined image for one or two reactants and the product."""
     if selected_prediction_field_2:
-        
-        # 打开图片
-        img1 = draw_reaction(selected_prediction_field_1,dimension,1000,900)
-        img2 = draw_reaction(selected_prediction_field_2,dimension,1000,900)
-        img3 = draw_reaction(smiles_input,dimension,2000,1100)
+        img1 = draw_reaction(selected_prediction_field_1, dimension, 1000, 900)
+        img2 = draw_reaction(selected_prediction_field_2, dimension, 1000, 900)
+        img_prod = draw_reaction(smiles_input, dimension, 2000, 1100)
 
-        #添加标题
-        img1_withtitle = add_title_to_image(img1, 'reactant1')
-        img2_withtitle = add_title_to_image(img2, 'reactant2')
-        img3_withtitle = add_title_to_image(img3, 'biological product')
+        img1 = add_title_to_image(img1, 'Reactant 1')
+        img2 = add_title_to_image(img2, 'Reactant 2')
+        img_prod = add_title_to_image(img_prod, 'Product')
 
-        # 水平拼接
-        merged_top = Image.new('RGBA', (img1_withtitle.width + img2_withtitle.width, img1_withtitle.height))
-        merged_top.paste(img1_withtitle, (0, 0))
-        merged_top.paste(img2_withtitle, (img1_withtitle.width, 0))
-        merged_top = add_sign_to_image(merged_top,"+")
-        
-        # 上下拼接
-        final_image = Image.new('RGBA', (merged_top.width, merged_top.height + img3_withtitle.height))
-        final_image.paste(merged_top, (0, 0))
-        final_image.paste(img3_withtitle, (0, merged_top.height))
+        w1, h1 = img1.size
+        w2, _ = img2.size
+        merged_top = Image.new('RGBA', (w1 + w2, h1))
+        merged_top.paste(img1, (0, 0))
+        merged_top.paste(img2, (w1, 0))
+        merged_top = add_sign_to_image(merged_top, "+")
 
-        final_image = add_sign_to_image(final_image,"=>")
-        
+        mt_w, mt_h = merged_top.size
+        _, ph = img_prod.size
+        final_img = Image.new('RGBA', (mt_w, mt_h + ph))
+        final_img.paste(merged_top, (0, 0))
+        final_img.paste(img_prod, (0, mt_h))
+        final_img = add_sign_to_image(final_img, "=>")
+        return final_img
     else:
+        img1 = draw_reaction(selected_prediction_field_1, dimension, 2000, 900)
+        img_prod = draw_reaction(smiles_input, dimension, 2000, 1100)
 
-        # 打开图片
-        img1 = draw_reaction(selected_prediction_field_1,dimension,2000,900)
-        img2 = draw_reaction(smiles_input,dimension,2000,1100)
+        img1 = add_title_to_image(img1, 'Reactant')
+        img_prod = add_title_to_image(img_prod, 'Product')
 
-        #添加标题
-        img1_withtitle = add_title_to_image(img1, 'reactant')
-        img2_withtitle = add_title_to_image(img2, 'biological product')
-        
-        # 上下拼接
-        final_image = Image.new('RGBA', (img2_withtitle.width, img1_withtitle.height + img2_withtitle.height))
-        final_image.paste(img1_withtitle, (0, 0))
-        final_image.paste(img2_withtitle, (0, img1_withtitle.height))
-        
-        final_image = add_sign_to_image(final_image,"=>")
-
-
-    # 保存图片
-    return final_image
+        w_prod, h_prod = img_prod.size
+        _, h1 = img1.size
+        final_img = Image.new('RGBA', (w_prod, h1 + h_prod))
+        final_img.paste(img1, (0, 0))
+        final_img.paste(img_prod, (0, h1))
+        final_img = add_sign_to_image(final_img, "=>")
+        return final_img
 
 def main():
-    with open('./logo.jpg', 'rb') as file:
+    with open('./assets/logo.jpg', 'rb') as file:
         img_base64 = base64.b64encode(file.read()).decode()
 
-    # 添加学校logo图
-    st.markdown("""
-    <style>
-    .logo {{
-        position: absolute;
-        top: 0px;  /* 调整距离顶部的位置 */
-        left: 600px; /* 调整距离左侧的位置 */
-        width: 100px; /* 调整校徽的宽度 */
-        height: 100px; /* 调整校徽的高度 */
-    }}
-    </style>
-    <img class="logo" src="data:image/png;base64,{}" alt="校徽">
-    """.format(img_base64), unsafe_allow_html=True)
+    # Logo
+    st.markdown(
+        f"""
+        <style>
+        .logo {{ position: absolute; top:0; left:600px; width:90px; height:90px; }}
+        </style>
+        <img class="logo" src="data:image/png;base64,{img_base64}" alt="Logo" />
+        """,
+        unsafe_allow_html=True,
+    )
+    st.title('Visualization')
 
-    st.title('预测反应可视化')
-
-    # 允许用户选择2D或3D显示
-    dimension = st.selectbox("选择分子可视化的维度:", options=["2D", "3D"])
+    dimension = st.selectbox("Select display dimension", options=["2D", "3D"])
 
     if 'results' in st.session_state:
         results = st.session_state.results
-        smiles_input = st.session_state.smiles_input
-
-        # 创建搜索框
-        search_id = st.selectbox('选择逆合成预测结果编号:', st.session_state.df)
-
-        # 处理搜索输入
-        selected_result = results[search_id - 1]
-        selected_prediction_field_1 = selected_result['反应物1']
-        selected_prediction_field_2 = selected_result['反应物2']
-
-        st.subheader("模型预测结果分子图")
-        st.image(merge_images_complex(selected_prediction_field_1, selected_prediction_field_2,smiles_input,dimension)) 
-
+        smiles_input = st.session_state.get('smiles_input', '')
+        id_options = list(range(1, len(results) + 1))
+        search_id = st.selectbox('Select predicted result ID', id_options, index=0)
+        if search_id is None:
+            st.warning('No result selected.')
+            return
+        sel_index = int(search_id) - 1
+        selected_result = results[sel_index]
+        selected_prediction_field_1 = selected_result['Reactant 1']
+        selected_prediction_field_2 = selected_result['Reactant 2']
+        st.subheader("Molecular Structures")
+        img = merge_images_complex(selected_prediction_field_1, selected_prediction_field_2, smiles_input, dimension)
+        st.image(img)
     else:
-        st.error('请先完成模型预测！')
+        st.error('Please run a prediction first.')
 
     # 页脚文本
     footer_text = """
