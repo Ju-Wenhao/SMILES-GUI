@@ -10,6 +10,7 @@ Author: Wenhao Ju (Ju Wenhao)
 ---
 
 ## Table of Contents
+
 - [Live Demo](#live-demo)
 - [Overview](#overview)
 - [Features](#features)
@@ -20,6 +21,10 @@ Author: Wenhao Ju (Ju Wenhao)
 - [Usage (GUI Inference)](#usage-gui-inference)
 - [Model Training](#model-training)
 - [Data & Checkpoints](#data--checkpoints)
+- [Model Caching](#model-caching)
+- [Checkpoint Conversion & Safety](#checkpoint-conversion--safety)
+- [Batch Conversion Tool](#batch-conversion-tool)
+- [Exporting Predictions](#exporting-predictions)
 - [Configuration](#configuration)
 - [Logging & Reproducibility](#logging--reproducibility)
 - [Performance & Evaluation](#performance--evaluation)
@@ -38,9 +43,10 @@ Author: Wenhao Ju (Ju Wenhao)
 
 You can try the application instantly (no installation required):
 
-👉 [https://smiles-reactor-juwenhao.streamlit.app](https://smiles-reactor-juwenhao.streamlit.app)
+👉 <https://smiles-reactor-juwenhao.streamlit.app>
 
 The hosted version:
+
 - Loads a pre-trained checkpoint from the server environment.
 - Allows entering a target product SMILES and viewing predicted reactant sets.
 - Renders molecules with RDKit.
@@ -53,12 +59,14 @@ If the app sleeps (resource limits), reload to restart.
 ## Overview
 
 SMILES-GUI provides an interactive environment to:
-1. Enter a target molecule as a SMILES string.
-2. Run a trained retrosynthesis model to propose precursor/reactant candidates.
-3. Visualize predicted disconnections and structures.
+
+1. Enter a target molecule as a SMILES string.  
+2. Run a trained retrosynthesis model to propose precursor/reactant candidates.  
+3. Visualize predicted disconnections and structures.  
 4. (Optionally) retrain the model locally with custom data.
 
 Core technologies:
+
 - RDKit for SMILES parsing and depiction
 - PyTorch for sequence / structural model inference
 - Streamlit for lightweight browser-based UI
@@ -85,12 +93,16 @@ Core technologies:
 
 High-level workflow:
 
-User Input (SMILES) → Validation (RDKit) → Tokenization / Encoding → Model Inference (PyTorch) → Candidate Decoding (beam / top-k) → Visualization & Ranking → GUI Output
+```text
+User Input (SMILES) → Validation (RDKit) → Tokenization / Encoding → Model Inference (PyTorch) →
+Candidate Decoding (beam / top-k) → Visualization & Ranking → GUI Output
+```
 
 Conceptual modules:
+
 - Data pipeline (loading, normalization)
-- Model (sequence-to-sequence / transformer variant)
-- Inference utilities (sampling, beam search)
+- Model (graph/sequence encoder + edit decoder)
+- Inference utilities (beam search)
 - Visualization (RDKit drawing)
 - Frontend (`home.py` Streamlit app)
 
@@ -98,31 +110,29 @@ Conceptual modules:
 
 ## Project Structure
 
-(Adjust if your actual repository layout differs.)
+Simplified layout (actual may differ):
 
-```
+```text
 SMILES-GUI/
-├─ home.py                  # Streamlit GUI entry
-├─ train.py                 # Training script
+├─ home.py
+├─ train.py
 ├─ requirements.txt
-├─ src/
-│  ├─ data/                 # Data loading / preprocessing utilities
-│  ├─ models/               # Model architectures
-│  ├─ inference/            # Decoding / beam search helpers
-│  ├─ utils/                # Generic helpers (logging, seeding, config)
-│  └─ visualization/        # RDKit-based rendering helpers
-├─ data/
-│  ├─ raw/                  # Original dataset files
-│  ├─ processed/            # Preprocessed artifacts
-│  └─ samples/              # Sample subsets
+├─ pages/
+│  ├─ 1selection.py
+│  ├─ 2prediction.py
+├─ models/
+│  ├─ graph2edits.py
+│  ├─ beam_search.py
+├─ utils/
+│  ├─ rxn_graphs.py
+│  ├─ chem.py
 ├─ experiments/
-│  ├─ checkpoints/          # Trained model weights (*.pt / *.pth)
-│  ├─ logs/                 # Training logs / metrics
-│  └─ configs/              # (Optional) YAML/JSON configs
-├─ docs/
-│  ├─ images/               # Screenshots, diagrams
-│  └─ design.md
-└─ LICENSE
+│  ├─ uspto_50k/
+│  │  ├─ with_rxn_class/
+│  │  └─ without_rxn_class/
+├─ data/
+│  └─ uspto_50k/
+└─ convert_checkpoint.py
 ```
 
 ---
@@ -130,16 +140,17 @@ SMILES-GUI/
 ## Installation
 
 ### Prerequisites
+
 - Python 3.9.6
-- (Recommended) Conda (especially for RDKit installation)
-- (Optional) CUDA-capable GPU for faster training/inference
+- (Recommended) Conda (for RDKit)
+- (Optional) CUDA-capable GPU
 
 ### Create Environment
 
 ```bash
-conda create -n smiles-gui python=3.9.6
+conda create -n smiles-gui python=3.9.6 -y
 conda activate smiles-gui
-conda install -c conda-forge rdkit
+conda install -c conda-forge rdkit -y
 ```
 
 ### Install Dependencies
@@ -148,54 +159,35 @@ conda install -c conda-forge rdkit
 pip install -r requirements.txt
 ```
 
-Typical dependencies (subset):
-- torch
-- rdkit (or rdkit-pypi)
-- streamlit
-- numpy
-- pandas
-- tqdm
-- (optional) pyyaml, scikit-learn
-
 ---
 
 ## Quick Start
 
-1. Ensure at least one model checkpoint exists under `experiments/checkpoints/`.
-2. Run the GUI locally:
-   ```bash
-   streamlit run home.py
-   ```
-3. Enter a product SMILES (e.g. `CCOC(=O)C1=CC=CC=C1`).
-4. Click the predict button to view reactant candidates.
+```bash
+streamlit run home.py
+```
+
+Enter a SMILES (e.g. `CCOC(=O)C1=CC=CC=C1`) → Select a model → Predict.
 
 ---
 
 ## Usage (GUI Inference)
 
-Launch:
 ```bash
 streamlit run home.py
 ```
 
-Typical UI elements (may vary):
-- Text input: target product SMILES
-- (Optional) model selector
-- (Optional) decoding parameters: beam size / top-k
-- Predict trigger button
-- Output panel: ranked reactant sets + molecule images
+UI Elements:
 
-Feature ideas you can extend:
-- Downloadable CSV of predictions
-- Confidence / score metrics
-- Multi-candidate comparison view
-- Batch input via uploaded file
+- Product SMILES input
+- Model selection with version tags
+- Predict button
+- Results table (Reactant 1 / Reactant 2 / Confidence)
+- Download buttons (CSV / SDF)
 
 ---
 
 ## Model Training
-
-Use the training script:
 
 ```bash
 python train.py \
@@ -209,7 +201,6 @@ python train.py \
   --device cuda
 ```
 
-Suggested arguments (align with your implementation):
 | Argument | Description |
 |----------|-------------|
 | `--data_dir` | Root processed dataset directory |
@@ -224,11 +215,6 @@ Suggested arguments (align with your implementation):
 | `--seed` | Random seed |
 | `--beam_size` | (Optional) beam width for validation decoding |
 
-Checkpoint naming convention example:
-```
-experiments/checkpoints/model_epoch{E}_val{metric}.pt
-```
-
 ---
 
 ## Data & Checkpoints
@@ -241,15 +227,107 @@ experiments/checkpoints/model_epoch{E}_val{metric}.pt
 | `experiments/logs/` | Training event / metric logs |
 | `experiments/configs/` | Configuration files (if used) |
 
-Recommendation:
-- Keep large raw datasets out of version control (use `.gitignore`).
-- Save a copy of each config used for a training run.
+Recommendations:
+
+- Keep large raw datasets out of version control.
+- Save each run's config & seed.
+
+---
+
+## Model Caching
+
+The GUI caches the last loaded model in `st.session_state._model_cache` to avoid repeated deserialization.  
+If the selected checkpoint path is unchanged, only inference runs—saving time especially on CPU.
+
+---
+
+## Checkpoint Conversion & Safety
+
+PyTorch 2.6+: `torch.load` defaults to `weights_only=True` (safer).  
+Older checkpoints with pickled custom classes fallback to full pickle.
+
+Safe format (`format_version = 2`):
+
+```python
+{
+  'format_version': 2,
+  'model_args': {
+      'config': {...},
+      'atom_vocab_list': [...],
+      'bond_vocab_list': [...]
+  },
+  'state': <state_dict>
+}
+```
+
+Convert single file:
+
+```bash
+python convert_checkpoint.py \
+  --input experiments/uspto_50k/without_rxn_class/.../epoch_120.pt \
+  --output experiments/uspto_50k/without_rxn_class/.../epoch_120_safe.pt \
+  --verify
+```
+
+---
+
+## Batch Conversion Tool
+
+单文件与批量转换已统一为同一个脚本 `convert_checkpoint.py`。旧的 `batch_convert_checkpoints.py` 包装器已移除（请直接使用统一脚本）。
+
+递归转换全部 legacy / v1 检查点：
+
+```bash
+# 仅预览（不会真正写入）
+python convert_checkpoint.py --batch-root experiments/uspto_50k --dry-run
+
+# 实际转换（单进程）
+python convert_checkpoint.py --batch-root experiments/uspto_50k
+
+# 并行转换（例如 4 进程）
+python convert_checkpoint.py --batch-root experiments/uspto_50k --workers 4
+
+# 覆盖已存在 *_safe.pt 文件
+python convert_checkpoint.py --batch-root experiments/uspto_50k --overwrite
+
+# 转换并逐个验证可用性（建议在首次批量迁移时使用）
+python convert_checkpoint.py --batch-root experiments/uspto_50k --verify --workers 4
+```
+
+可选参数：
+
+- `--dry-run` 只列出计划，不执行
+- `--overwrite` 若已存在 `_safe.pt` 仍重新生成
+- `--workers N` 进程并行数（>1 使用 `ProcessPoolExecutor`）
+- `--verify` 每个输出再用 `torch.load(..., weights_only=True)` 校验结构完整
+
+单文件模式保持不变：
+
+```bash
+python convert_checkpoint.py \
+  --input experiments/uspto_50k/without_rxn_class/.../epoch_120.pt \
+  --output experiments/uspto_50k/without_rxn_class/.../epoch_120_safe.pt \
+  --verify
+```
+
+Streamlit 选择页已使用该批量接口按钮进行统一转换。
+
+---
+
+## Exporting Predictions
+
+After a successful prediction:
+
+- `Download CSV` → Raw table of Reactant 1 / Reactant 2 / Confidence
+- `Download SDF` → Each reactant as a separate record (`$$$$` delimited)
+
+Missing reactant slots (e.g. single-reactant predictions) are skipped.
 
 ---
 
 ## Configuration
 
-If you employ config files (YAML/JSON), an example:
+Example YAML:
 
 ```yaml
 model:
@@ -265,7 +343,6 @@ training:
 data:
   train: data/processed/train.csv
   val: data/processed/val.csv
-  vocab: data/processed/vocab.json
 inference:
   beam_size: 10
   max_len: 256
@@ -277,109 +354,90 @@ seed: 42
 
 ## Logging & Reproducibility
 
-Recommended practices (ensure implemented as needed):
-- Set global seeds (`random`, `numpy`, `torch`).
-- Log per-epoch training & validation metrics.
-- Save:
-  - Best checkpoint (based on validation metric)
-  - Final checkpoint
-  - Config snapshot
-- (Optional) Record Git commit hash.
+- Set seeds (`random`, `numpy`, `torch`).
+- Log per-epoch metrics.
+- Save best + final checkpoints.
+- Capture config & environment (Python, dependency versions).
 
 ---
 
 ## Performance & Evaluation
 
-Fill in when metrics are available:
-
 | Metric | Value | Notes |
 |--------|-------|-------|
 | Top-1 Accuracy | TBD | Validation set |
-| Top-5 Accuracy | TBD | |
+| Top-5 Accuracy | TBD |  |
 | Inference Latency | TBD | Per molecule |
-| Model Size | TBD | Checkpoint file size |
-
-Add reaction class–conditioned metrics if your dataset contains labels.
+| Model Size | TBD | Checkpoint size |
 
 ---
 
 ## Deployment
 
-### Streamlit Cloud (Public App)
-The live instance runs at:  
-https://smiles-reactor-juwenhao.streamlit.app
+### Streamlit Cloud
 
-Typical deployment steps:
-1. Push repository to GitHub (public).
-2. On Streamlit Cloud, select the repo and specify `home.py` as the entry script.
-3. Set Python version to 3.9.x in a `packages` or `runtime.txt` (if needed).
-4. Ensure `requirements.txt` includes all dependencies.
-5. Upload or reconstruct checkpoint into `experiments/checkpoints/` (avoid committing large files if exceeding limits; consider external hosting).
+Live: <https://smiles-reactor-juwenhao.streamlit.app>
 
-### Local Production (Example)
-Use `nohup` or a process manager:
+Steps:
+
+1. Push repository to GitHub.  
+2. Select app entry `home.py`.  
+3. Ensure `requirements.txt` includes RDKit + PyTorch.  
+4. Upload / mount checkpoints (or convert online).  
+
+### Local Production
+
 ```bash
 nohup streamlit run home.py --server.port 8501 --server.address 0.0.0.0 &
 ```
 
-Reverse proxy (Nginx) can be added for SSL/hostname.
+(Optionally) put Nginx reverse proxy & TLS in front.
 
 ---
 
 ## Roadmap
 
-- Add multi-step planning extension
-- Improve decoding diversity (diverse beam / nucleus sampling)
-- Confidence scoring calibration
-- Dataset curation utilities
-- Batch CSV upload via GUI
-- Dockerfile & container deployment
-- Unit tests for tokenizer and inference functions
-- Model ensemble support
+- Multi-step route planning
+- Diverse decoding (nucleus sampling, diverse beam)
+- Confidence calibration
+- Batch input file support
+- Docker image
+- Unit / integration tests
+- Ensemble model support
 
 ---
 
 ## Limitations
 
-- Single-step retrosynthesis only (no route planning).
-- Does not validate chemical feasibility (reagents, conditions, yields).
-- Model quality tied to dataset distribution.
-- No integration with external reaction knowledge bases.
-- GPU recommended for larger models; CPU inference may be slow.
+- Single-step only (no full synthesis planning).
+- No chemical condition feasibility checks.
+- Data-dependent generalization.
+- Assumes valid SMILES input.
 
 ---
 
 ## Contributing
 
-1. Fork the repository
-2. Create a branch:
-   ```bash
-   git checkout -b feature/your-feature
-   ```
-3. Commit with conventional message:
-   ```bash
-   git commit -m "feat: add improved beam search"
-   ```
-4. Push & open a Pull Request
+```bash
+git checkout -b feat/your-feature
+# ... work ...
+git commit -m "feat: add new decoding strategy"
+git push origin feat/your-feature
+```
 
-Suggested style:
-- Use type hints
-- Lint (e.g. `ruff` or `flake8`)
-- Format (e.g. `black`)
-- Add docstrings (Google / NumPy style)
-- Add tests for critical logic
+Guidelines:
+
+- Type hints
+- Lint (`ruff` / `flake8`)
+- Format (`black`)
+- Tests for critical logic
+- Clear docstrings
 
 ---
 
 ## License
 
-Licensed under the Apache License 2.0.  
-See the [LICENSE](LICENSE) file for full text.
-
-```
-Apache License
-Version 2.0, January 2004
-```
+Apache 2.0 — see [LICENSE](LICENSE).
 
 ---
 
@@ -389,15 +447,12 @@ Version 2.0, January 2004
 - PyTorch
 - Streamlit
 - Open-source cheminformatics & ML communities
-- Academic supervision and institutional support
 
 ---
 
 ## Citation
 
-If you use this project:
-
-```
+```bibtex
 @software{ju2025smilesgui,
   author       = {Ju, Wenhao},
   title        = {SMILES-GUI: A Streamlit Interface for Retrosynthesis Prediction},
@@ -411,13 +466,8 @@ If you use this project:
 ## Contact
 
 - Author: Wenhao Ju
-- Live Demo: https://smiles-reactor-juwenhao.streamlit.app
-- Repository: https://github.com/Ju-Wenhao/SMILES-GUI
-- Issues: Please open a GitHub Issue for bug reports or feature requests.
+- Demo: <https://smiles-reactor-juwenhao.streamlit.app>
+- Repo: <https://github.com/Ju-Wenhao/SMILES-GUI>
+- Issues: GitHub Issue tracker
 
 ---
-
-Feel free to let me know if you’d like:
-- A Chinese translation
-- A minimized README for PyPI or Docker Hub
-- A badge section (e.g. license, Python version, demo status)
