@@ -163,7 +163,7 @@ def main():
     st.session_state.setdefault('predict_clicked', False)
     st.session_state.setdefault('batch_smiles_input', '')
 
-    input_mode = st.radio("", ["Single", "Batch"], horizontal=True, label_visibility='collapsed')
+    input_mode = st.radio("Input Mode", ["Single", "Batch"], horizontal=True, label_visibility='collapsed')
 
     # Helper callbacks
     def _single_example():
