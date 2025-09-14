@@ -1,25 +1,11 @@
-import base64
 import streamlit as st
+from utils.ui import render_header
 
 
 def main():
     """Landing page of the RetroSynthesis Predictor UI."""
-    # Load logo as Base64
-    with open('./assets/logo.jpg', 'rb') as file:
-        img_base64 = base64.b64encode(file.read()).decode()
-
-    # Logo (positioned absolutely)
-    st.markdown(
-        f"""
-        <style>
-        .logo {{ position: absolute; top:0; left:600px; width:90px; height:90px; }}
-        </style>
-        <img class="logo" src="data:image/png;base64,{img_base64}" alt="Logo" />
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.title('Retrosynthesis Prediction Tool')
+    # Unified header (logo + theme toggle + page title)
+    render_header(title='Retrosynthesis Prediction Tool')
     st.caption('Powered by the G2G-MAML model')
 
     st.markdown(

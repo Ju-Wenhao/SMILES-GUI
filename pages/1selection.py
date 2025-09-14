@@ -1,12 +1,8 @@
-import base64
 import os
 import streamlit as st
 import pandas as pd
 from pathlib import Path
-import json
-from rdkit import Chem  # kept for potential future extension
 import torch
-from subprocess import CalledProcessError, run
 
 ROOT_DIR = Path(__file__).parent.parent / 'experiments' / 'uspto_50k'
 
@@ -33,22 +29,6 @@ def _probe_checkpoint_version(path: str):
     return 'unknown', 'unknown'
 
 
-def _convert_checkpoint(path: str):
-    # Invoke existing conversion script to produce _safe file
-    safe_path = Path(path).with_name(Path(path).stem + '_safe.pt')
-    cmd = [
-        'python', 'convert_checkpoint.py',
-        '--input', path,
-        '--output', str(safe_path),
-        '--verify'
-    ]
-    try:
-        r = run(cmd, capture_output=True, text=True, check=True)
-        return True, safe_path, r.stdout
-    except CalledProcessError as e:
-        return False, safe_path, e.stderr
-
-
 def select_model_and_logs():
     options_with_paths = []
     for category in ['without_rxn_class', 'with_rxn_class']:
@@ -69,52 +49,19 @@ def select_model_and_logs():
         return None, None
 
     selected_label = st.selectbox("Select a model checkpoint", [o[2] for o in options_with_paths])
-    # Batch conversion button
-    if st.button('Batch Convert All Legacy/V1 to V2 Safe'):
-        with st.spinner('Batch converting...'):
-            import subprocess, sys
-            # Use unified script (convert_checkpoint.py) batch mode
-            cmd = [sys.executable, 'convert_checkpoint.py', '--batch-root', str(ROOT_DIR)]
-            out = subprocess.run(cmd, capture_output=True, text=True)
-        if out.returncode == 0:
-            st.success('Batch conversion complete')
-            st.expander('Details').code(out.stdout)
-        else:
-            st.error('Batch conversion failed')
-            st.expander('Details (stderr)').code(out.stderr)
     selected = next((o for o in options_with_paths if o[2] == selected_label), None)
     if not selected:
         return None, None
 
     model_path, logs_path, label, fv = selected
-
-    if fv != 2 and fv != 'error':
-        if st.button('Convert to format_version=2 (safe)'):
-            with st.spinner('Converting...'):
-                ok, safe_path, msg = _convert_checkpoint(model_path)
-            if ok:
-                st.success(f'Converted -> {safe_path}')
-            else:
-                st.error('Conversion failed')
-                st.code(msg)
     return model_path, logs_path
 
 
+from utils.ui import render_header
+
+
 def main():
-    with open('./assets/logo.jpg', 'rb') as file:
-        img_base64 = base64.b64encode(file.read()).decode()
-
-    st.markdown(
-        f"""
-        <style>
-        .logo {{ position: absolute; top:0; left:600px; width:90px; height:90px; }}
-        </style>
-        <img class="logo" src="data:image/png;base64,{img_base64}" alt="Logo" />
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.title("Selection")
+    render_header(title="Selection")
     selected_model_file, selected_logs_file = select_model_and_logs()
 
     if selected_model_file and selected_logs_file:
@@ -135,13 +82,47 @@ def main():
             chart_data = train_df[selected_columns]
             st.line_chart(chart_data)
 
+        # Read raw config header block
         config_df = pd.read_csv(selected_logs_file, nrows=18, header=None)
-        config_df.columns = config_df.iloc[0]
-        config_df = config_df.drop(0).reset_index(drop=True)
-        # set first column as index (label column)
-        config_df = config_df.set_index(config_df.columns[0])
-        st.subheader("Hyperparameters")
-        st.write(config_df)
+        # Defensive: drop completely empty rows (all NaN)
+        config_df = config_df.dropna(how='all')
+        if not config_df.empty:
+            # First row considered header
+            header_row = config_df.iloc[0]
+            config_df = config_df[1:]
+            config_df.columns = header_row
+            # If first column name is NaN/None, assign a placeholder
+            first_col_name = config_df.columns[0]
+            if pd.isna(first_col_name) or first_col_name is None or first_col_name == '':
+                first_col_name = 'param'
+                cols = list(config_df.columns)
+                cols[0] = first_col_name
+                config_df.columns = cols
+            # Set first column as index
+            config_df = config_df.set_index(first_col_name)
+            # Remove columns that are entirely NaN (avoid serialization of all-NaN columns)
+            config_df = config_df.dropna(axis=1, how='all')
+            # Replace remaining NaN with None so Streamlit JSON serialization uses null (valid JSON)
+            config_df = config_df.where(pd.notnull(config_df), None)
+            # Also ensure index has no NaN
+            new_index = ['(blank)' if (isinstance(ix, float) and (ix != ix)) else ix for ix in config_df.index]
+            # Use set_axis to avoid direct assignment issues in some static analyzers
+            config_df = config_df.set_axis(new_index, axis=0)
+            st.subheader("Hyperparameters")
+            try:
+                st.write(config_df)
+            except Exception as e:
+                st.warning(f"Could not render table directly ({e}); showing plain text.")
+                # Fallback textual representation
+                lines = []
+                for idx, row in config_df.iterrows():
+                    # Join non-null values
+                    vals = [str(v) for v in row.tolist() if v is not None]
+                    lines.append(f"{idx}: {' | '.join(vals)}")
+                st.code('\n'.join(lines))
+        else:
+            st.subheader("Hyperparameters")
+            st.info('No hyperparameter rows found in log header.')
 
     footer_text = """
     <div style='position: fixed; bottom: 0; width: 100%; text-align: center; padding: 1px; background: transparent;'>

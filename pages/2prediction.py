@@ -7,6 +7,17 @@ from pathlib import Path
 from rdkit import RDLogger
 from rdkit import Chem
 from models import Graph2Edits, BeamSearch
+from utils.ui import render_header
+
+# Toast helper (compat with older Streamlit)
+def safe_toast(msg: str, icon: str = '✅'):
+    try:
+        if hasattr(st, 'toast'):
+            st.toast(f"{icon} {msg}")
+            return
+    except Exception:
+        pass
+    st.info(f"{icon} {msg}")
 
 
 lg = RDLogger.logger()
@@ -19,16 +30,21 @@ ROOT_DIR = Path(__file__).parent.parent / 'experiments' / 'uspto_50k'
 
 example_smiles = "[O:1]=[S:19]([c:18]1[cH:17][c:15]([Cl:16])[c:14]2[o:13][c:12]3[c:28]([c:27]2[cH:26]1)[CH2:29][N:9]([C:7]([O:6][C:3]([CH3:2])([CH3:4])[CH3:5])=[O:8])[CH2:10][CH2:11]3)[c:20]1[cH:21][cH:22][cH:23][cH:24][cH:25]1"
 
+# Multi-line batch example (3 SMILES provided by user)
+batch_example_smiles = """[O:1]=[C:2]1[CH2:3][c:4]2[cH:5][c:6](-[c:7]3[n:8][n:9][c:10](-[c:11]4[cH:12][cH:13][cH:14][cH:15][cH:16]4)[s:17]3)[cH:18][cH:19][c:20]2[NH:21]1
+[CH3:1][O:2][C:3](=[O:4])[O:5][CH2:6][c:7]1[cH:8][cH:9][cH:10][c:11]([NH:12][C:13](=[O:14])[c:15]2[n:16][c:17](-[c:18]3[cH:19][cH:20][cH:21][cH:22][cH:23]3)[nH:24][c:25]2[CH2:26][CH2:27][C:28]23[CH2:29][CH:30]4[CH2:31][CH:32]([CH2:33][CH:34]([CH2:35]4)[CH2:36]2)[CH2:37]3)[cH:38]1
+[CH3:1][Si:2]([CH3:3])([CH3:4])[C:5]#[C:6][c:7]1[cH:8][c:9](-[c:10]2[cH:11][c:12](-[c:13]3[cH:14][cH:15][c:16]([CH2:17][N:18]4[CH2:19][CH2:20][CH2:21][CH2:22][CH2:23]4)[cH:24][cH:25]3)[cH:26][n:27][c:28]2[F:29])[c:30]([NH2:31])[cH:32][n:33]1"""
+
 def predict_reactions(selected_file, molecule_string, use_rxn_class=False, beam_size=10, max_steps=9):
     # Basic SMILES validation
     if not molecule_string or not isinstance(molecule_string, str):
         raise ValueError('Input SMILES is empty or not a string.')
-    mol = Chem.MolFromSmiles(molecule_string)
+    mol = Chem.MolFromSmiles(molecule_string)  # type: ignore[attr-defined]
     if mol is None:
         raise ValueError('Failed to parse input SMILES (MolFromSmiles returned None).')
     try:
-        Chem.SanitizeMol(mol)
-    except Exception as e:
+        Chem.SanitizeMol(mol)  # type: ignore[attr-defined]
+    except Exception as e:  # pragma: no cover
         raise ValueError(f'Invalid SMILES structure: {e}')
 
     checkpoint_path = os.path.join(ROOT_DIR, selected_file)
@@ -126,117 +142,222 @@ def _set_cached_model(checkpoint_path, model, version, load_mode):
     }
 
 def main():
-    with open('./assets/logo.jpg', 'rb') as file:
-        img_base64 = base64.b64encode(file.read()).decode()
+    # Shared header with theme + logo toggle
+    render_header(title='Prediction')
 
-    # Logo
-    st.markdown(
-        f"""
-        <style>
-        .logo {{ position: absolute; top:0; left:600px; width:90px; height:90px; }}
-        </style>
-        <img class="logo" src="data:image/png;base64,{img_base64}" alt="Logo" />
-        """,
-        unsafe_allow_html=True,
-    )
-    st.title('Prediction')
-
-    # Initialize key (avoid first access KeyError)
-    if 'smiles_input' not in st.session_state:
-        st.session_state.smiles_input = ''
-
-    # Example buttons use callbacks to avoid key conflicts with text_area
-    def _load_example():
-        st.session_state.smiles_input = example_smiles
-
-    def _clear_input():
-        st.session_state.smiles_input = ''
-
+    # --- CSS (unified) ---
     st.markdown(
         """
         <style>
-        .smi-box-wrapper { position: relative; }
-        .smi-controls { display: flex; gap: .5rem; align-items: center; justify-content: flex-end; margin-top: -0.2rem; }
-        .smi-length { margin-right: auto; font-size: 0.78rem; color: #666; }
+        .toolbar {display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; margin:0.25rem 0 0.4rem;}
+        .toolbar .spacer {flex:1 1 auto;}
+        .summary-badge {padding:4px 10px; border-radius:12px; font-size:0.72rem; background:rgba(120,120,120,0.15);}
+        .mono-small {font-size:0.7rem; font-family: var(--font-mono, monospace); opacity:0.8;}
         </style>
         """,
         unsafe_allow_html=True,
     )
 
-    st.text_area(
-        'Enter product SMILES',
-        height=5,
-        max_chars=500,
-        help='Max length 500 characters',
-        key='smiles_input'
-    )
-    col_len, col_spacer, col_btn1, col_btn2, col_btn3 = st.columns([2,0.3,1,1,1])
-    with col_len:
-        st.caption(f"Current SMILES length: {len(st.session_state.smiles_input)}")
-    with col_btn1:
-        st.button('Use example', on_click=_load_example, help='Load example')
-    with col_btn2:
-        st.button('Clear', on_click=_clear_input, help='Clear input')
-    with col_btn3:
-        predict_clicked = st.button('Predict', type='primary', help='Run retrosynthesis prediction')
-    if 'predict_clicked' not in st.session_state:
-        st.session_state.predict_clicked = False
-    if 'predict_clicked_flag' in locals() and predict_clicked:
-        st.session_state.predict_clicked = True
-    elif predict_clicked:
-        st.session_state.predict_clicked = True
+    # --- Initialize session keys ---
+    st.session_state.setdefault('smiles_input', '')
+    st.session_state.setdefault('predict_clicked', False)
+    st.session_state.setdefault('batch_smiles_input', '')
 
+    input_mode = st.radio("", ["Single", "Batch"], horizontal=True, label_visibility='collapsed')
+
+    # Helper callbacks
+    def _single_example():
+        st.session_state.smiles_input = example_smiles
+    def _single_clear():
+        # Clear input and associated single prediction artifacts
+        st.session_state.smiles_input = ''
+        # Remove previous results so display section disappears
+        for k in ['results', 'product_smiles', 'df']:
+            if k in st.session_state:
+                del st.session_state[k]
+        # Reset prediction trigger flag
+        st.session_state.predict_clicked = False
+        safe_toast('Single input cleared', icon='🧹')
+    def _batch_example():
+        # Insert multi-line batch example (3 SMILES)
+        st.session_state.batch_smiles_input = batch_example_smiles
+    def _batch_clear():
+        st.session_state.batch_smiles_input = ''
+        safe_toast('Batch inputs cleared', icon='🧹')
+
+    single_predict_clicked = False
+    batch_predict_clicked = False
+
+    # --- Render Input Area ---
+    if input_mode == 'Single':
+        st.text_area(
+            'Product SMILES',
+            key='smiles_input',
+            height=90,
+            max_chars=500,
+            help='Enter a single product SMILES (max 500 chars)'
+        )
+        with st.container():
+            # Re-ordered: Example | Clear | Length | Predict (rightmost)
+            c1, c2, c3, c4 = st.columns([1,1,2,1])
+            with c1:
+                st.button('Load Example', on_click=_single_example, help='Load example SMILES')
+            with c2:
+                st.button('Clear', on_click=_single_clear, help='Clear input')
+            with c3:
+                st.markdown(f"<div class='mono-small'>Length: {len(st.session_state.smiles_input)}</div>", unsafe_allow_html=True)
+            with c4:
+                single_predict_clicked = st.button('Single Predict', type='primary', help='Run retrosynthesis prediction')
+    else:
+        st.text_area(
+            'Product SMILES (one per line)',
+            key='batch_smiles_input',
+            height=160,
+            help='One product SMILES per line; blank lines ignored; max 100 lines.'
+        )
+        lines = [l.strip() for l in st.session_state.batch_smiles_input.splitlines() if l.strip()]
+        with st.container():
+            # Re-ordered to mirror single mode: Example | Clear | Length | Predict(right)
+            c1, c2, c3, c4 = st.columns([1,1,2,1])
+            with c1:
+                st.button('Load Example', key='batch_example', on_click=_batch_example, help='Insert one example line')
+            with c2:
+                st.button('Clear', key='batch_clear', on_click=_batch_clear, help='Clear all lines')
+            with c3:
+                st.markdown(f"<div class='mono-small'>Valid lines: {len(lines)}</div>", unsafe_allow_html=True)
+            with c4:
+                batch_predict_clicked = st.button('Batch Predict', type='primary', help='Run prediction for all lines')
+
+    # Normalize state for single predictions
+    if input_mode == 'Single':
+        if single_predict_clicked:
+            st.session_state.predict_clicked = True
+    else:
+        st.session_state.predict_clicked = False  # disable single prediction flag in batch mode
+
+    # --- Model availability ---
     model_path = st.session_state.get('selected_model_file')
     if not model_path:
         st.info('Select a model on the Selection page to enable prediction.')
 
-    # (example button handled above with rerun)
+    # --- SINGLE MODE EXECUTION ---
+    if input_mode == 'Single':
+        current_smi = st.session_state.smiles_input.strip()
+        if st.session_state.predict_clicked:
+            if not current_smi:
+                st.warning('Input is empty.')
+            elif not model_path:
+                st.warning('No model selected.')
+            else:
+                try:
+                    with st.spinner('Running prediction...'):
+                        results, load_mode = predict_reactions(model_path, current_smi)
+                    st.session_state.results = results
+                    st.session_state.product_smiles = current_smi
+                    df = pd.DataFrame(results)
+                    df.insert(0, 'ID', range(1, len(df) + 1))
+                    st.subheader('Predicted Precursors')
+                    st.dataframe(df.set_index('ID'), use_container_width=True)
+                    # Export utilities (single mode) - right aligned
+                    exp_sp, exp_dl = st.columns([4,1])
+                    with exp_dl:
+                        st.download_button('Download CSV', data=df.to_csv(index=False).encode('utf-8'), file_name='single_prediction.csv', mime='text/csv', key='single_download_csv')
+                    st.session_state.df = df
+                    safe_toast(f'Single prediction finished: {len(df)} candidates', icon='✅')
+                    if load_mode == 'full_pickle':
+                        st.info('Checkpoint loaded with fallback full pickle (ensure it is trusted).')
+                    # Reset flag to avoid re-run on refresh
+                    st.session_state.predict_clicked = False
+                except ValueError as ve:
+                    st.error(f'Validation failed: {ve}')
+                except FileNotFoundError as fe:
+                    st.error(f'Model file not found: {fe}')
+                except Exception as e:  # pragma: no cover
+                    import traceback
+                    traceback.print_exc()
+                    st.error(f'Unexpected error: {e}')
+        elif st.session_state.get('results'):
+            # Show last prediction for continuity
+            st.subheader('Last Prediction')
+            df_prev = pd.DataFrame(st.session_state.results)
+            if 'ID' not in df_prev.columns:
+                df_prev.insert(0, 'ID', range(1, len(df_prev) + 1))
+            st.dataframe(df_prev.set_index('ID'), use_container_width=True)
 
-    current_smi = st.session_state.get('smiles_input','').strip()
-    if 'predict_clicked' in st.session_state and st.session_state.predict_clicked:
-        if not current_smi:
-            st.warning('Input SMILES is empty.')
-        elif not model_path:
-            st.warning('No model selected.')
+    # --- BATCH MODE EXECUTION ---
+    else:
+        raw_text = st.session_state.batch_smiles_input
+        lines = [l.strip() for l in raw_text.splitlines() if l.strip()]
+        if batch_predict_clicked:
+            if not lines:
+                st.warning('No valid SMILES lines provided.')
+            elif len(lines) > 100:
+                st.warning('Exceeded 100 line limit. Please reduce input.')
+            elif not model_path:
+                st.warning('No model selected.')
+            else:
+                aggregated = []
+                errors = []
+                with st.spinner('Running batch prediction...'):
+                    for idx, smi in enumerate(lines, start=1):
+                        try:
+                            preds, _mode = predict_reactions(model_path, smi)
+                            for rank, row in enumerate(preds, start=1):
+                                aggregated.append({
+                                    'Input_Index': idx,
+                                    'Input_SMILES': smi,
+                                    'Rank': rank,
+                                    'Reactant_1': row['Reactant 1'],
+                                    'Reactant_2': row['Reactant 2'],
+                                    'Confidence': row['Confidence'],
+                                })
+                        except Exception as e:  # noqa
+                            errors.append({'Input_Index': idx, 'Input_SMILES': smi, 'Error': str(e)})
+                success_inputs = {r['Input_Index'] for r in aggregated}
+                failed_inputs = {e['Input_Index'] for e in errors}
+                st.markdown(
+                    f"<div class='summary-badge'>Inputs: {len(lines)} | Success: {len(success_inputs)} | Failed: {len(failed_inputs)}</div>",
+                    unsafe_allow_html=True
+                )
+                if aggregated:
+                    st.subheader('Batch Prediction Results')
+                    df_all = pd.DataFrame(aggregated)
+                    st.dataframe(df_all, use_container_width=True)
+                    # Structure for visualization page
+                    structured = {}
+                    for row in aggregated:
+                        idx = row['Input_Index']
+                        rec = structured.setdefault(idx, {'product': row['Input_SMILES'], 'predictions': []})
+                        rec['predictions'].append({
+                            'rank': row['Rank'],
+                            'Reactant 1': row['Reactant_1'],
+                            'Reactant 2': row['Reactant_2'],
+                            'Confidence': row['Confidence'],
+                        })
+                    for rec in structured.values():
+                        rec['predictions'].sort(key=lambda x: x['rank'])
+                    st.session_state.batch_results = structured
+                    # Download & copy utilities (batch) - right aligned
+                    csv_data = df_all.to_csv(index=False).encode('utf-8')
+                    b_sp, b_dl = st.columns([4,1])
+                    with b_dl:
+                        st.download_button('Download CSV', data=csv_data, file_name='batch_predictions.csv', mime='text/csv')
+                    safe_toast(f'Batch prediction done: {len(success_inputs)} success / {len(failed_inputs)} failed', icon='✅' if not failed_inputs else 'ℹ️')
+                else:
+                    st.info('No successful predictions.')
+                if errors:
+                    with st.expander('Errors', expanded=False):
+                        st.dataframe(pd.DataFrame(errors), use_container_width=True)
         else:
-            st.subheader("Predicted Precursors")
-            try:
-                results, load_mode = predict_reactions(model_path, current_smi)
-                st.session_state.results = results
-                # Persist original product SMILES for visualization page
-                st.session_state.product_smiles = current_smi
-                df = pd.DataFrame(results)
-                df.insert(0, 'ID', range(1, len(df) + 1))
-                df = df.set_index('ID')
-                df.columns = df.columns.map(str)
-                st.write(df)
-                df.insert(0, 'ID', range(1, len(df) + 1))
-                st.session_state.df = df
-                if load_mode == 'full_pickle':
-                    st.info('Model loaded with full_pickle mode (fallback from weights_only). Ensure the checkpoint is from a trusted source.')
-            except ValueError as ve:
-                st.error(f'SMILES validation failed: {ve}')
-            except FileNotFoundError as fe:
-                st.error(f'Model file not found: {fe}')
-            except Exception as e:
-                import traceback
-                traceback.print_exc()
-                st.error(f'Unexpected error during prediction: {e}')
-    elif st.session_state.get('results'):
-        st.subheader("Last Prediction")
-        df_prev = pd.DataFrame(st.session_state.results)
-        if 'ID' not in df_prev.columns:
-            df_prev.insert(0, 'ID', range(1, len(df_prev) + 1))
-        df_prev = df_prev.set_index('ID')
-        st.write(df_prev)
+            # Passive info when not running
+            st.caption(f'Valid lines: {len(lines)}')
 
-    # Footer
+    # --- Footer ---
     footer_text = """
     <div style='position: fixed; bottom: 0; width: 100%; text-align: center; padding: 1px; background: transparent;'>
-        <p> Copyright&copy; 2024 Wangz Team,SUMHS, All rights reserved.</p>
+        <p>Copyright &copy; 2024 Wangz Team, SUMHS. All rights reserved.</p>
     </div>
     """
-    # Render custom footer
     st.markdown(footer_text, unsafe_allow_html=True)
     
 if __name__ == '__main__':
