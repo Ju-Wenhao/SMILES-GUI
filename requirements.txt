@@ -5,7 +5,7 @@ numpy==1.26.4
 pandas==2.2.2
 Pillow==10.3.0
 rdkit==2023.9.5
-streamlit==1.33.0
+streamlit==1.48.1
 torch==2.2.2
 tqdm==4.65.0
 py3Dmol==2.5.2
