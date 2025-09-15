@@ -3,7 +3,7 @@
 A lightweight Streamlit interface for single-step retrosynthesis (inverse synthesis) from a product SMILES using PyTorch models and RDKit for validation & rendering.
 
 Live Demo: https://smiles-reactor-juwenhao.streamlit.app  
-Author: Ju Wenhao
+Author: Ju Wenhao (Demo project)
 
 ---
 
